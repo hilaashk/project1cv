@@ -172,26 +172,12 @@ def draw_lane_area(frame, left_poly, right_poly):
 
     return overlay
 
-def color_threshold(hsv):
-    # White mask
-    white_mask = cv2.inRange(hsv, (0, 0, 200), (180, 25, 255))
-    # Yellow mask
-    yellow_mask = cv2.inRange(hsv, (18, 80, 80), (30, 255, 255))
-    # Combine both masks
-    combined_mask = cv2.bitwise_or(white_mask, yellow_mask)
-    return combined_mask
 
 
 def process_frame(frame):
     """Process a single video frame"""
     height, width = frame.shape[:2]
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    color_mask=color_threshold(hsv)
-    masked_frame = cv2.bitwise_and(frame, frame, mask=color_mask)
-
-    # Step 4: Convert the masked frame to grayscale for edge detection
-    gray = cv2.cvtColor(masked_frame, cv2.COLOR_BGR2GRAY)
-
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blur, 50, 150)
     lane_region = region_of_interest(edges)
@@ -248,4 +234,4 @@ def process_video(input_file):
 
 
 if __name__ == "__main__":
-    process_video("HillDriveCar2.mp4")
+    process_video("carHillDrive.mp4")
