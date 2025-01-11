@@ -12,50 +12,34 @@ def region_of_interest(img):
     """Apply a region of interest mask using a polygon."""
     height, width = img.shape[:2]
     polygon = np.array([[
-        (int(width * 0.15), int(height * 0.94)),
-        (int(width * 0.45), int(height * 0.62)),
-        (int(width * 0.58), int(height * 0.62)),
-        (int(width * 0.95), int(height * 0.94))
+        (int(width * 0.2), height),  # Bottom-left corner (near the vehicle)
+        (int(width * 0.4), int(height * 0.6)),  # Top-left corner
+        (int(width * 0.8), int(height * 0.6)),  # Top-right corner
+        (int(width), height)  # Bottom-right corner
     ]], dtype=np.int32)
 
     mask = np.zeros_like(img)
     cv2.fillPoly(mask, polygon, 255)
+    #cv2.imshow("poly", mask)
     return cv2.bitwise_and(img, mask)
 
+def color_threshold(image):
+    """Apply color thresholding to detect white and yellow lanes."""
+    # White mask
+    lower_white = np.array([160, 160, 160])
+    upper_white = np.array([220, 225, 200])
+    mask_white = cv2.inRange(image, lower_white, upper_white)
 
-def detect_lane_lines(masked_edges):
-    """Detect lane lines using Hough transform"""
-    lines = cv2.HoughLinesP(
-        masked_edges,
-        rho=2,
-        theta=np.pi / 180,
-        threshold=50,
-        minLineLength=65,  # Increased from 30
-        maxLineGap=200  # Reduced from 120
-    )
+    # Yellow mask (adjust if necessary)
+    lower_yellow = np.array([70, 120, 155])  # Starting hue for yellow
+    upper_yellow = np.array([110, 160, 225])  # Ending hue for yellow (no overlap with brown)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
-    left_points = []
-    right_points = []
-
-    if lines is not None:
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            if x2 != x1:  # Avoid division by zero
-                slope = (y2 - y1) / (x2 - x1)
-                # Tightened slope threshold for better line detection
-                if 0.3 < abs(slope) < 2.5:  # Changed from 2 to 1.5
-                    length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                    weight = int(length / 10)
-
-                    if slope < 0:  # Left lane
-                        left_points.extend([(x1, y1)] * weight)
-                        left_points.extend([(x2, y2)] * weight)
-                    else:  # Right lane
-                        right_points.extend([(x1, y1)] * weight)
-                        right_points.extend([(x2, y2)] * weight)
-
-    return left_points, right_points
-
+    # Combine masks
+    combined_mask = cv2.bitwise_or(mask_white, mask_yellow)
+    cv2.imshow("white", combined_mask)
+    return cv2.bitwise_and(image, image, mask=combined_mask)
 
 def fit_poly(points):
     """Fit a polynomial to lane points"""
@@ -96,8 +80,8 @@ def calculate_curvature(poly, y_eval):
         return None
 
     # Convert pixel space to meters
-    ym_per_pix = 30 / 720  # meters per pixel in y dimension
-    xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
+    ym_per_pix = 30 / 1080  # meters per pixel in y dimension
+    xm_per_pix = 3.7 / 1020  # meters per pixel in x dimension
 
     # Calculate curvature
     A = poly[0] * (xm_per_pix / (ym_per_pix ** 2))
@@ -137,7 +121,7 @@ def draw_lanes(frame, left_poly, right_poly):
     height = frame.shape[0]
 
     # Adjust the bottom drawing point to match the ROI
-    y_start = int(height * 0.95)  # Match the ROI bottom crop
+    y_start = int(height * 0.9)  # Match the ROI bottom crop
     y_end = int(height * 0.6)
 
     if left_poly is not None:
@@ -159,28 +143,26 @@ def draw_lane_area(frame, left_poly, right_poly):
     height = frame.shape[0]
 
     # Adjust the bottom drawing point to match the ROI
-    y_start = int(height * 0.95)  # Match the ROI bottom crop
+    y_start = int(height * 0.9)  # Match the ROI bottom crop
     y_end = int(height * 0.6)
 
     if left_poly is not None and right_poly is not None:
         left_points = generate_points(left_poly, y_start, y_end)
         right_points = generate_points(right_poly, y_start, y_end)
-
-        if left_points is not None and right_points is not None:
-            points = np.vstack((left_points, np.flipud(right_points)))
-            cv2.fillPoly(overlay, [points], (255, 255, 255))
+        points = np.vstack((left_points, np.flipud(right_points)))
+        cv2.fillPoly(overlay, [points], (255, 255, 255))
 
     return overlay
 
-
-
 def process_frame(frame):
     """Process a single video frame"""
-    height, width = frame.shape[:2]
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    img=color_threshold(frame)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blur, 50, 150)
+    edges = cv2.Canny(gray, 50, 150)
     lane_region = region_of_interest(edges)
+
+
     lines = cv2.HoughLinesP(
         lane_region,
         rho=2,
@@ -190,19 +172,25 @@ def process_frame(frame):
         maxLineGap=200
     )
 
+    #cv2.imshow("White Mask", lane_region)
+
     left_points, right_points = [], []
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
-            slope = (y2 - y1) / (x2 - x1) if x2 != x1 else 0
-            if 0.5 < abs(slope) < 2:
-                if slope < 0:
-                    left_points.extend([(x1, y1), (x2, y2)])
-                else:
-                    right_points.extend([(x1, y1), (x2, y2)])
+            if x2 != x1:  # Avoid division by zero
+                slope = (y2 - y1) / (x2 - x1)
+                # Tightened slope threshold for better line detection
+                if 0.3 < abs(slope) < 2.5:  # Changed from 2 to 1.5
+                    length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                    weight = int(length / 10)
 
-    # Detect lane lines
-    left_points, right_points = detect_lane_lines(lane_region)
+                    if slope < 0:  # Left lane
+                        left_points.extend([(x1, y1)] * weight)
+                        left_points.extend([(x2, y2)] * weight)
+                    else:  # Right lane
+                        right_points.extend([(x1, y1)] * weight)
+                        right_points.extend([(x2, y2)] * weight)
 
     # Fit polynomials
     left_poly = fit_poly(left_points)
