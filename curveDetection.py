@@ -9,10 +9,24 @@ RIGHT_POLY_BUFFER = deque(maxlen=10)
 
 
 def region_of_interest(img):
-    """Apply a region of interest mask using a polygon."""
+    """
+        Apply a region of interest mask using a polygon.
+
+        This function creates a mask to isolate a specific region of interest
+        in the given image, typically focusing on the road area for lane detection.
+        The polygonal region is dynamically defined based on the image dimensions.
+
+        Parameters:
+        img (numpy.ndarray): The input image to apply the region of interest mask.
+
+        Returns:
+        numpy.ndarray: The image with the region of interest applied. Areas outside
+                       the polygon will be masked out (set to black).
+        """
+
     height, width = img.shape[:2]
     polygon = np.array([[
-        (int(width * 0.2), height),  # Bottom-left corner (near the vehicle)
+        (int(width * 0.2), height),  # Bottom-left corner
         (int(width * 0.4), int(height * 0.6)),  # Top-left corner
         (int(width * 0.8), int(height * 0.6)),  # Top-right corner
         (int(width), height)  # Bottom-right corner
@@ -23,15 +37,30 @@ def region_of_interest(img):
     return cv2.bitwise_and(img, mask)
 
 def color_threshold(image):
-    """Apply color thresholding to detect white and yellow lanes."""
+    """
+        Apply color thresholding to detect white and yellow lanes.
+
+        This function isolates white and yellow colors in an image, which are
+        typically used to represent lane markings on roads. A mask is created for
+        each color based on predefined thresholds, and the results are combined
+        to highlight the relevant regions.
+
+        Parameters:
+        image (numpy.ndarray): The input image in BGR color space.
+
+        Returns:
+        numpy.ndarray: The image with only the white and yellow regions retained,
+                       masked by the combined color thresholds.
+        """
+
     # White mask
     lower_white = np.array([160, 160, 160])
     upper_white = np.array([220, 225, 200])
     mask_white = cv2.inRange(image, lower_white, upper_white)
 
-    # Yellow mask (adjust if necessary)
-    lower_yellow = np.array([70, 120, 155])  # Starting hue for yellow
-    upper_yellow = np.array([110, 160, 225])  # Ending hue for yellow (no overlap with brown)
+    # Yellow mask
+    lower_yellow = np.array([70, 120, 155])
+    upper_yellow = np.array([110, 160, 225])
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
@@ -40,8 +69,23 @@ def color_threshold(image):
     return cv2.bitwise_and(image, image, mask=combined_mask)
 
 def fit_poly(points):
-    """Fit a polynomial to lane points"""
-    if len(points) >= 3:  # Need at least 3 points for quadratic fit
+    """
+        Fit a polynomial to lane points.
+
+        This function fits a quadratic polynomial to a set of points representing
+        a lane in an image. A minimum of three points is required for a quadratic
+        fit. The polynomial is fitted with the y-coordinates as the independent
+        variable and the x-coordinates as the dependent variable.
+
+        Parameters:
+        points (list of tuples): A list of (x, y) coordinates representing lane points.
+
+        Returns:
+        numpy.ndarray or None: The coefficients of the quadratic polynomial in the
+                               form [a, b, c] (where ax^2 + bx + c = y), or None if
+                               the fit cannot be performed.
+        """
+    if len(points) >= 3:
         x = [p[0] for p in points]
         y = [p[1] for p in points]
         try:
@@ -52,7 +96,23 @@ def fit_poly(points):
 
 
 def smooth_poly(poly, buffer):
-    """Smooth polynomial coefficients using a rolling buffer"""
+    """
+       Smooth polynomial coefficients using a rolling buffer.
+
+       This function smooths the coefficients of a polynomial by maintaining a
+       rolling buffer of recent polynomials and calculating their average. This
+       helps reduce noise and fluctuations in lane detection over consecutive frames.
+
+       Parameters:
+       poly (numpy.ndarray or None): The current polynomial coefficients to add
+                                     to the buffer. Can be None if no valid polynomial exists.
+       buffer (list): A list used as a rolling buffer to store polynomial coefficients
+                      from recent frames.
+
+       Returns:
+       numpy.ndarray or None: The smoothed polynomial coefficients (averaged across
+                              the buffer) or None if the buffer is empty.
+       """
     if poly is not None:
         buffer.append(poly)
     if len(buffer) > 0:
@@ -61,7 +121,24 @@ def smooth_poly(poly, buffer):
 
 
 def generate_points(poly, y_start, y_end):
-    """Generate points for lane visualization"""
+    """
+        Generate points for lane visualization.
+
+        This function generates a set of (x, y) points based on a given polynomial
+        to represent the detected lane over a specified range of y-values. These
+        points can be used to draw the lane on an image or video frame.
+
+        Parameters:
+        poly (numpy.ndarray): The polynomial coefficients (in the form [a, b, c])
+                               used to calculate the x-values for each y.
+        y_start (int or float): The starting y-value for generating points.
+        y_end (int or float): The ending y-value for generating points.
+
+        Returns:
+        numpy.ndarray or None: A 2D array of points representing the lane (x, y)
+                               coordinates. Returns None if the polynomial is invalid
+                               or the calculation fails.
+        """
     if poly is None:
         return None
     y = np.linspace(y_start, y_end, num=100)
@@ -71,30 +148,30 @@ def generate_points(poly, y_start, y_end):
     except:
         return None
 
-
-def calculate_curvature(poly, y_eval):
-    """Calculate the curvature radius of a polynomial at a point"""
-    if poly is None:
-        return None
-
-    # Convert pixel space to meters
-    ym_per_pix = 30 / 1080  # meters per pixel in y dimension
-    xm_per_pix = 3.7 / 1020  # meters per pixel in x dimension
-
-    # Calculate curvature
-    A = poly[0] * (xm_per_pix / (ym_per_pix ** 2))
-    B = poly[1] * (xm_per_pix / ym_per_pix)
-
-    curvature = ((1 + (2 * A * y_eval * ym_per_pix + B) ** 2) ** 1.5) / np.absolute(2 * A)
-    return curvature
-
-
 def enforce_lane_consistency(left_poly, right_poly, height):
-    """Ensure left and right lanes don't cross"""
+    """
+       Ensure left and right lanes don't cross and maintain consistent width.
+
+       This function verifies that the left and right lane boundaries do not overlap
+       or cross each other. It also checks if the lane width (the distance between
+       the left and right lanes) is within a reasonable range. If either of these
+       conditions is violated, it returns None for both lanes to indicate an error
+       in lane detection.
+
+       Parameters:
+       left_poly (numpy.ndarray or None): The polynomial coefficients for the left lane.
+       right_poly (numpy.ndarray or None): The polynomial coefficients for the right lane.
+       height (int): The height (number of rows) of the image, used to define the range
+                     for lane point generation.
+
+       Returns:
+       tuple: A tuple containing the updated left and right polynomials. If any
+              consistency checks fail, returns (None, None).
+       """
     if left_poly is None or right_poly is None:
         return left_poly, right_poly
 
-    y_start = int(height * 0.95)  # Updated to match ROI
+    y_start = int(height * 0.95)
     y_end = int(height * 0.6)
 
     left_points = generate_points(left_poly, y_start, y_end)
@@ -105,16 +182,31 @@ def enforce_lane_consistency(left_poly, right_poly, height):
         if np.any(left_points[:, 0] >= right_points[:, 0]):
             return None, None
 
-        # Check if lanes are too close or too far apart
         lane_width = np.mean(right_points[:, 0] - left_points[:, 0])
-        if lane_width < 300 or lane_width > 1000:  # Pixel thresholds
+        if lane_width < 300 or lane_width > 1000:
             return None, None
 
     return left_poly, right_poly
 
 
 def draw_lanes(frame, left_poly, right_poly):
-    """Draw the lane lines"""
+    """
+       Draw the lane lines on the frame.
+
+       This function generates the lane lines by creating points from the left
+       and right polynomials and then drawing them on a blank overlay. The
+       overlay is then returned, and it can be added to the original frame to
+       visualize the lane markings.
+
+       Parameters:
+       frame (numpy.ndarray): The input image/frame on which the lane lines will be drawn.
+       left_poly (numpy.ndarray or None): The polynomial coefficients for the left lane.
+       right_poly (numpy.ndarray or None): The polynomial coefficients for the right lane.
+
+       Returns:
+       numpy.ndarray: An overlay image with the lane lines drawn on it, which can be
+                      added to the original frame for visualization.
+       """
     overlay = np.zeros_like(frame)
     height = frame.shape[0]
 
@@ -136,7 +228,23 @@ def draw_lanes(frame, left_poly, right_poly):
 
 
 def draw_lane_area(frame, left_poly, right_poly):
-    """Draw the lane area"""
+    """
+        Draw the lane lines on the frame.
+
+        This function generates the lane lines by creating points from the left
+        and right polynomials and then drawing them on a blank overlay. The
+        overlay is then returned, and it can be added to the original frame to
+        visualize the lane markings.
+
+        Parameters:
+        frame (numpy.ndarray): The input image/frame on which the lane lines will be drawn.
+        left_poly (numpy.ndarray or None): The polynomial coefficients for the left lane.
+        right_poly (numpy.ndarray or None): The polynomial coefficients for the right lane.
+
+        Returns:
+        numpy.ndarray: An overlay image with the lane lines drawn on it, which can be
+                       added to the original frame for visualization.
+        """
     overlay = np.zeros_like(frame)
     height = frame.shape[0]
 
@@ -153,7 +261,25 @@ def draw_lane_area(frame, left_poly, right_poly):
     return overlay
 
 def process_frame(frame):
-    """Process a single video frame"""
+    """
+        Process a single video frame to detect lanes and visualize them.
+
+        This function applies several image processing steps to a frame from the
+        video. It performs color thresholding to detect lane markings, converts
+        the image to grayscale, applies Gaussian blur, and detects edges using
+        Canny edge detection. It then isolates the region of interest (ROI) where
+        the lanes are located and uses the Hough transform to detect lane lines.
+        Afterward, polynomials are fitted to the detected points, smoothing is
+        applied to the polynomials, and consistency between the left and right lanes
+        is checked. Finally, the detected lanes and lane area are drawn on the frame
+        and returned for visualization.
+
+        Parameters:
+        frame (numpy.ndarray): The input image/frame to be processed.
+
+        Returns:
+        numpy.ndarray: The processed frame with lane lines and lane area drawn on it.
+        """
     img=color_threshold(frame)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -169,8 +295,6 @@ def process_frame(frame):
         minLineLength=50,
         maxLineGap=200
     )
-
-    #cv2.imshow("White Mask", lane_region)
 
     left_points, right_points = [], []
     if lines is not None:
