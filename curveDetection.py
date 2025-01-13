@@ -20,7 +20,6 @@ def region_of_interest(img):
 
     mask = np.zeros_like(img)
     cv2.fillPoly(mask, polygon, 255)
-    #cv2.imshow("poly", mask)
     return cv2.bitwise_and(img, mask)
 
 def color_threshold(image):
@@ -38,7 +37,6 @@ def color_threshold(image):
 
     # Combine masks
     combined_mask = cv2.bitwise_or(mask_white, mask_yellow)
-    cv2.imshow("white", combined_mask)
     return cv2.bitwise_and(image, image, mask=combined_mask)
 
 def fit_poly(points):
@@ -214,12 +212,12 @@ def process_frame(frame):
     return final_output
 
 
-def process_video(input_file):
+def process_video(input_path,output_path):
     """Process the input video file"""
-    clip = VideoFileClip(input_file)
-    processed_clip = clip.fl_image(process_frame)
-    processed_clip.preview()
+    input_video = VideoFileClip(input_path)
+    processed = input_video.fl_image(process_frame)
+    processed.write_videofile(output_path, fps=input_video.fps, audio=False)
 
 
 if __name__ == "__main__":
-    process_video("carHillDrive.mp4")
+    process_video("video/curveDriveVid.mp4","results/curveDriveResult.mp4")

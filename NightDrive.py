@@ -176,69 +176,6 @@ def fill_lane_area(image, lines, color=[0, 255, 0], thickness=-1):
         return image
 
 
-
-def calculate_curvature(left_line, right_line, image_shape):
-    """
-    Calculate the curvature of the lane lines in meters.
-    Parameters:
-        left_line, right_line: Line points
-        image_shape: Shape of the image
-    Returns:
-        left_curverad, right_curverad: Radius of curvature for both lines in meters
-    """
-    # Define conversions in x and y from pixels space to meters
-    ym_per_pix = 30 / 720  # meters per pixel in y dimension
-    xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
-
-    # Convert to real world space
-    left_points = np.array(left_line)
-    right_points = np.array(right_line)
-
-    left_y = left_points[1]
-    left_x = left_points[0]
-    right_y = right_points[1]
-    right_x = right_points[0]
-
-    # Fit polynomial in real world space
-    left_fit_cr = np.polyfit(left_y * ym_per_pix, left_x * xm_per_pix, 2)
-    right_fit_cr = np.polyfit(right_y * ym_per_pix, right_x * xm_per_pix, 2)
-
-    # Calculate radius of curvature
-    y_eval = image_shape[0] * ym_per_pix
-
-    left_curverad = ((1 + (2 * left_fit_cr[0] * y_eval + left_fit_cr[1]) ** 2) ** 1.5) \
-                    / np.absolute(2 * left_fit_cr[0])
-    right_curverad = ((1 + (2 * right_fit_cr[0] * y_eval + right_fit_cr[1]) ** 2) ** 1.5) \
-                     / np.absolute(2 * right_fit_cr[0])
-
-    return left_curverad, right_curverad
-
-
-def predict_future_path(left_line, right_line, distance_ahead=30):
-    """
-    Predict the lane path ahead based on current curvature.
-    Parameters:
-        left_line, right_line: Current line points
-        distance_ahead: How far ahead to predict in meters
-    Returns:
-        predicted_left, predicted_right: Predicted points for both lines
-    """
-    # Convert points to numpy arrays if they aren't already
-    left_points = np.array(left_line)
-    right_points = np.array(right_line)
-
-    # Fit polynomials to current lines
-    left_fit = np.polyfit(left_points[1], left_points[0], 2)
-    right_fit = np.polyfit(right_points[1], right_points[0], 2)
-
-    # Generate points for prediction
-    y_ahead = np.linspace(0, distance_ahead, num=20)
-    left_x_ahead = left_fit[0] * y_ahead ** 2 + left_fit[1] * y_ahead + left_fit[2]
-    right_x_ahead = right_fit[0] * y_ahead ** 2 + right_fit[1] * y_ahead + right_fit[2]
-
-    return (left_x_ahead, y_ahead), (right_x_ahead, y_ahead)
-
-
 def lane_lines(image, lines):
     """
     Modified lane_lines function to include prediction
@@ -396,7 +333,8 @@ def process_video(test_video, output_video):
         # Load and process the video
         input_video = editor.VideoFileClip(test_video, audio=False)
         processed = input_video.fl_image(process_frame_with_smoothing)
-        processed.preview(fps=input_video.fps, audio=False)
+        processed.write_videofile(output_video, fps=input_video.fps, audio=False)
+
 
     except Exception as e:
         print(f"Error processing video: {str(e)}")
@@ -409,4 +347,4 @@ def process_video(test_video, output_video):
             pass
 
 # calling driver function
-process_video(r"C:\Users\hilaa\PycharmProjects\PythonProject\NightDrive3.mp4",'output.mp4')
+process_video("video/NightDrive.mp4",'results/nightDriveResult.mp4')
